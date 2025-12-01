@@ -1,0 +1,195 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+class PlayfairCipher {
+private:
+    char matrix[5][5];
+    string key;
+
+    // Removes duplicates from key and processes it
+    string processKey(string key) {
+        string result = "";
+        bool used[26] = { false };
+
+        for (char c : key) {
+            if (c == 'j') c = 'i';
+            if (!isalpha(c)) continue;
+            c = tolower(c);
+
+            if (!used[c - 'a']) {
+                used[c - 'a'] = true;
+                result += c;
+            }
+        }
+
+        // Add remaining alphabet letters
+        for (char c = 'a'; c <= 'z'; c++) {
+            if (c == 'j') continue;
+            if (!used[c - 'a']) {
+                used[c - 'a'] = true;
+                result += c;
+            }
+        }
+        return result;
+    }
+
+    // Build 5x5 matrix
+    void generateMatrix() {
+        string processedKey = processKey(key);
+        int idx = 0;
+
+        for (int i = 0; i < 5; i++)
+            for (int j = 0; j < 5; j++)
+                matrix[i][j] = processedKey[idx++];
+    }
+
+    // Find position of character in matrix
+    void findPosition(char c, int &row, int &col) {
+        if (c == 'j') c = 'i';
+
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                if (matrix[i][j] == c) {
+                    row = i;
+                    col = j;
+                    return;
+                }
+            }
+        }
+    }
+
+    // Preprocess plaintext into digraphs
+    vector<string> createDigraphs(string text) {
+        vector<string> digraphs;
+        text.erase(remove_if(text.begin(), text.end(), 
+                [](char c) { return !isalpha(c); }), text.end());
+
+        for (auto &c : text) {
+            if (c == 'j') c = 'i';
+            c = tolower(c);
+        }
+
+        for (int i = 0; i < text.length(); i++) {
+            char a = text[i];
+            char b;
+
+            if (i + 1 == text.length()) {
+                b = 'x';  
+            } else {
+                b = text[i + 1];
+                if (a == b) {
+                    b = 'x';
+                } else {
+                    i++;  
+                }
+            }
+
+            string pair = "";
+            pair += a;
+            pair += b;
+            digraphs.push_back(pair);
+        }
+
+        return digraphs;
+    }
+
+public:
+    PlayfairCipher(string key) {
+        this->key = key;
+        generateMatrix();
+    }
+
+    // Encrypt a pair
+    string encryptPair(string p) {
+        int r1, c1, r2, c2;
+        findPosition(p[0], r1, c1);
+        findPosition(p[1], r2, c2);
+
+        if (r1 == r2) { // Same row
+            return string(1, matrix[r1][(c1 + 1) % 5]) +
+                   string(1, matrix[r2][(c2 + 1) % 5]);
+        }
+        if (c1 == c2) { // Same column
+            return string(1, matrix[(r1 + 1) % 5][c1]) +
+                   string(1, matrix[(r2 + 1) % 5][c2]);
+        }
+
+        // Rectangle case
+        return string(1, matrix[r1][c2]) + string(1, matrix[r2][c1]);
+    }
+
+    // Decrypt a pair
+    string decryptPair(string p) {
+        int r1, c1, r2, c2;
+        findPosition(p[0], r1, c1);
+        findPosition(p[1], r2, c2);
+
+        if (r1 == r2) { // Same row
+            return string(1, matrix[r1][(c1 + 4) % 5]) +
+                   string(1, matrix[r2][(c2 + 4) % 5]);
+        }
+        if (c1 == c2) { // Same column
+            return string(1, matrix[(r1 + 4) % 5][c1]) +
+                   string(1, matrix[(r2 + 4) % 5][c2]);
+        }
+
+        // Rectangle case
+        return string(1, matrix[r1][c2]) + string(1, matrix[r2][c1]);
+    }
+
+    // Encrypt function
+    string encrypt(string plaintext) {
+        vector<string> digraphs = createDigraphs(plaintext);
+        string cipher = "";
+
+        for (string d : digraphs)
+            cipher += encryptPair(d);
+
+        return cipher;
+    }
+
+    // Decrypt function
+    string decrypt(string ciphertext) {
+        vector<string> digraphs;
+
+        for (int i = 0; i < ciphertext.size(); i += 2)
+            digraphs.push_back(ciphertext.substr(i, 2));
+
+        string plain = "";
+        for (string d : digraphs)
+            plain += decryptPair(d);
+
+        return plain;
+    }
+
+    void printMatrix() {
+        cout << "Playfair Matrix:\n";
+        for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++)
+                cout << matrix[i][j] << " ";
+            cout << endl;
+        }
+    }
+};
+
+int main() {
+    string key, text;
+
+    cout << "Enter key: ";
+    getline(cin, key);
+
+    PlayfairCipher pf(key);
+
+    pf.printMatrix();
+
+    cout << "\nEnter plaintext: ";
+    getline(cin, text);
+
+    string cipher = pf.encrypt(text);
+    cout << "\nEncrypted Text: " << cipher << endl;
+
+    string decrypted = pf.decrypt(cipher);
+    cout << "Decrypted Text: " << decrypted << endl;
+
+    return 0;
+}
