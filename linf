@@ -1,0 +1,47 @@
+#include <iostream>
+#include <vector>
+using namespace std;
+
+// LFSR function: generate n bits of output
+void LFSR(vector<int> taps, vector<int> &state, int n) {
+    int m = state.size(); // number of bits in LFSR
+
+    cout << "Initial state: ";
+    for (int b : state) cout << b;
+    cout << "\nGenerated bits: ";
+
+    for (int i = 0; i < n; i++) {
+
+        // Compute feedback bit (XOR of tap positions)
+        int feedback = 0;
+        for (int t : taps) {
+            feedback ^= state[m - 1 - t];  
+            // Note: taps numbered from RIGHT (LSB=0)
+        }
+
+        // Output bit = leftmost bit (MSB)
+        int output = state[0];
+        cout << output;
+
+        // Shift left by 1
+        for (int j = 0; j < m - 1; j++) 
+            state[j] = state[j + 1];
+
+        // Insert feedback bit at rightmost position
+        state[m - 1] = feedback;
+    }
+    cout << endl;
+}
+
+int main() {
+    // Example: LFSR of length 4, taps at {0, 3} meaning XOR bit0 and bit3
+    // Polynomial x^4 + x + 1  has taps: {0,3}
+    
+    vector<int> state = {1,1,0,1};  // initial state (MSB→LSB)
+    vector<int> taps  = {0,3};       // XOR state[3] and state[0]
+    
+    int n = 16; // number of output bits to generate
+    
+    LFSR(taps, state, n);
+    return 0;
+}
