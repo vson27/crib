@@ -1,0 +1,96 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/* Fast modular exponentiation: (base^exp) % mod */
+long long modPow(long long base, long long exp, long long mod) {
+    long long result = 1;
+    base = base % mod;
+
+    while (exp > 0) {
+        if (exp & 1) result = (result * base) % mod;
+        exp >>= 1;
+        base = (base * base) % mod;
+    }
+    return result;
+}
+
+/* Compute gcd(a,b) */
+long long gcd(long long a, long long b) {
+    while (b != 0) {
+        long long temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+/* Extended Euclidean Algorithm: find modular inverse */
+long long modInverse(long long e, long long phi) {
+    long long a = phi, b = e;
+    long long x0 = 0, x1 = 1;
+
+    while (b != 0) {
+        long long q = a / b;
+        long long t = a - q * b;
+        a = b;
+        b = t;
+
+        t = x0 - q * x1;
+        x0 = x1;
+        x1 = t;
+    }
+
+    if (x0 < 0) x0 += phi;
+    return x0;
+}
+
+int main() {
+    long long p, q;
+
+    cout << "Enter prime p: ";
+    cin >> p;
+    cout << "Enter prime q: ";
+    cin >> q;
+
+    long long n = p * q;
+    long long phi = (p - 1) * (q - 1);
+
+    cout << "\nComputed values:" << endl;
+    cout << "n   = " << n << endl;
+    cout << "phi = " << phi << endl;
+
+    // Choose e (public exponent)
+    long long e;
+    cout << "\nEnter public key exponent e (must be coprime with phi): ";
+    cin >> e;
+
+    if (gcd(e, phi) != 1) {
+        cout << "Invalid e, not coprime with phi!" << endl;
+        return 0;
+    }
+
+    // Compute d (private exponent)
+    long long d = modInverse(e, phi);
+
+    cout << "\nPublic Key  (e, n) = (" << e << ", " << n << ")" << endl;
+    cout << "Private Key (d, n) = (" << d << ", " << n << ")" << endl;
+
+    long long message;
+    cout << "\nEnter message (integer form) to encrypt: ";
+    cin >> message;
+
+    if (message >= n) {
+        cout << "Message must be smaller than n!" << endl;
+        return 0;
+    }
+
+    // Encryption: C = M^e mod n
+    long long cipher = modPow(message, e, n);
+    cout << "\nEncrypted Cipher = " << cipher << endl;
+
+    // Decryption: M = C^d mod n
+    long long decrypted = modPow(cipher, d, n);
+    cout << "Decrypted Message = " << decrypted << endl;
+
+    return 0;
+}
