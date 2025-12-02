@@ -1,0 +1,83 @@
+#include <stdio.h>
+#include <gmp.h>
+#include <stdlib.h>
+#include <time.h>
+
+// Miller–Rabin with GMP
+int miller_rabin(mpz_t n, int k) {
+    if (mpz_cmp_ui(n, 2) < 0) return 0;
+    if (mpz_cmp_ui(n, 2) == 0 || mpz_cmp_ui(n, 3) == 0) return 1;
+
+    mpz_t d, n_minus_1, a, x, temp;
+    mpz_inits(d, n_minus_1, a, x, temp, NULL);
+
+    mpz_sub_ui(n_minus_1, n, 1);
+    mpz_set(d, n_minus_1);
+
+    while (mpz_even_p(d)) mpz_divexact_ui(d, d, 2);
+
+    gmp_randstate_t state;
+    gmp_randinit_mt(state);
+    gmp_randseed_ui(state, time(NULL));
+
+    for (int i = 0; i < k; i++) {
+        mpz_urandomm(a, state, n_minus_1);
+        mpz_add_ui(a, a, 2);
+
+        mpz_powm(x, a, d, n);
+
+        if (mpz_cmp_ui(x, 1) == 0 || mpz_cmp(x, n_minus_1) == 0)
+            continue;
+
+        int flag = 0;
+        mpz_set(temp, d);
+        while (mpz_cmp(temp, n_minus_1) != 0) {
+            mpz_powm_ui(x, x, 2, n);
+            mpz_mul_ui(temp, temp, 2);
+
+            if (mpz_cmp_ui(x, 1) == 0) { mpz_clears(d, n_minus_1, a, x, temp, NULL); return 0; }
+            if (mpz_cmp(x, n_minus_1) == 0) { flag = 1; break; }
+        }
+        if (!flag) { mpz_clears(d, n_minus_1, a, x, temp, NULL); return 0; }
+    }
+
+    mpz_clears(d, n_minus_1, a, x, temp, NULL);
+    return 1;
+}
+
+int main() {
+    mpz_t num;
+    mpz_init(num);
+
+    gmp_randstate_t state;
+    gmp_randinit_mt(state);
+    gmp_randseed_ui(state, time(NULL));
+
+    // Generate random 1024-bit number
+    mpz_urandomb(num, state, 1024);
+
+    gmp_printf("Generated number: %Zd\n", num);
+    if (miller_rabin(num, 10))
+        printf("Probably prime\n");
+    else
+        printf("Composite\n");
+
+    // ---- Now test a known prime ----
+    mpz_set_str(num, "104729", 10);  // 104729 is prime
+
+    gmp_printf("\nTesting number: %Zd\n", num);
+    if (miller_rabin(num, 10))
+        printf("Probably prime\n");
+    else
+        printf("Composite\n");
+
+    // Cleanup
+    mpz_clear(num);
+    gmp_randclear(state);
+
+    return 0;
+}
+
+For large integer version with GMP:
+gcc miller_gmp.c -lgmp -o miller_gmp
+./miller_gmp
