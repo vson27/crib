@@ -1,0 +1,194 @@
+
+# e0_lab.py
+# Educational implementation: Original E0-like combiner (4 LFSRs + small FSM)
+# and Modified E0: same + 5th LFSR (40 bits).
+# Not a full Bluetooth-compliant KDF/initialization — uses a provided 128-bit key/IV to fill LFSR state.
+
+import sys
+from PIL import Image
+import numpy as np
+
+# ---------- Utilities ----------
+def bits_to_int(bits):
+    v = 0
+    for b in bits:
+        v = (v << 1) | (b & 1)
+    return v
+
+def int_to_bits(value, length):
+    return [(value >> i) & 1 for i in reversed(range(length))]
+
+# ---------- LFSR class ----------
+class LFSR:
+    def __init__(self, state_bits, taps):  # taps: list of tap positions (0 = LSB)
+        # state_bits: list [b_n-1, ..., b0] (MSB first)
+        self.state = list(state_bits)
+        self.n = len(state_bits)
+        self.taps = taps  # indices counted from left (MSB index = n-1)? we'll use indices from the left
+    def clock(self):
+        # compute feedback (XOR of tapped bits)
+        # taps are given as indices from MSB side (0..n-1) where 0 is MSB in state list
+        fb = 0
+        for t in self.taps:
+            fb ^= self.state[t]
+        out = self.state[-1]  # right-most bit as output (LSB)
+        # shift right by 1
+        self.state = [fb] + self.state[:-1]
+        return out
+    def peek_output(self, out_pos):
+        # out_pos: index in state to take as output (0..n-1) with 0 MSB
+        return self.state[out_pos]
+
+# ---------- E0 core (simplified) ----------
+class E0Core:
+    def __init__(self, key_bits_128, iv_bits=None):
+        # key_bits_128: list of 128 bits to seed the LFSRs
+        # split the 128 bits into LFSR initial states (25,31,33,39)
+        assert len(key_bits_128) >= 128
+        idx = 0
+        s1 = key_bits_128[idx:idx+25]; idx += 25
+        s2 = key_bits_128[idx:idx+31]; idx += 31
+        s3 = key_bits_128[idx:idx+33]; idx += 33
+        s4 = key_bits_128[idx:idx+39]; idx += 39
+        # LFSR feedback tap indices (MSB index=0)
+        # Derived from polynomials:
+        # f1: t^25 + t^20 + t^12 + t^8 + 1  ==> taps at positions (25-1 - (20,12,8,0)) ??? simpler to set explicit indices:
+        # We'll use indices with 0 as MSB (leftmost): tap positions (0-based from left)
+        # For polynomial t^n + t^a + ... + 1, the taps correspond to positions: n-1, n-1-a, ...
+        def poly_to_taps(n, degrees):  # degrees is list like [20,12,8,0]
+            taps = []
+            for d in degrees:
+                # position from left = n-1 - d
+                taps.append(n - 1 - d)
+            return taps
+        taps1 = poly_to_taps(25, [20,12,8,0])
+        taps2 = poly_to_taps(31, [24,16,12,0])
+        taps3 = poly_to_taps(33, [28,24,4,0])
+        taps4 = poly_to_taps(39, [36,28,4,0])
+        self.l1 = LFSR(s1, taps1)
+        self.l2 = LFSR(s2, taps2)
+        self.l3 = LFSR(s3, taps3)
+        self.l4 = LFSR(s4, taps4)
+        # Small FSM: implement a simple 2-bit blend register (educational)
+        self.s0 = 0
+        self.s1_fsm = 0
+
+    def keystream_bit(self):
+        # extract outputs (we pick specified positions; many descriptions pick index=last or specific)
+        # Using typical design: peek some bit positions instead of clock outputs, then update
+        x1 = self.l1.peek_output(self.l1.n - 1)  # LSB
+        x2 = self.l2.peek_output(self.l2.n - 1)
+        x3 = self.l3.peek_output(self.l3.n - 1)
+        x4 = self.l4.peek_output(self.l4.n - 1)
+        # sample FSM output (simple mix)
+        c0 = (self.s0 ^ self.s1_fsm) & 1
+        z = x1 ^ x2 ^ x3 ^ x4 ^ c0
+        # now clock LFSRs and update FSM (simple illustrative rule)
+        out1 = self.l1.clock()
+        out2 = self.l2.clock()
+        out3 = self.l3.clock()
+        out4 = self.l4.clock()
+        # update FSM states (example mixing)
+        new_s1 = (self.s0 ^ out1) & 1
+        new_s0 = (self.s1_fsm ^ out2) & 1
+        self.s0, self.s1_fsm = new_s0, new_s1
+        return z
+
+    def keystream_bytes(self, nbytes):
+        bits = []
+        for _ in range(nbytes*8):
+            bits.append(self.keystream_bit())
+        # pack into bytes
+        b = bytearray()
+        for i in range(nbytes):
+            val = 0
+            for j in range(8):
+                val = (val << 1) | bits[i*8 + j]
+            b.append(val)
+        return bytes(b)
+
+# ---------- Modified E0 (add 5th LFSR length 40) ----------
+class E0Modified(E0Core):
+    def __init__(self, key_bits_128, extra_40_bits):
+        # key_bits_128 used same as before to seed first 4 LFSRs
+        super().__init__(key_bits_128)
+        # extra_40_bits: list of 40 bits to initialize LFSR5
+        taps5 = lambda: [40 - 1 - d for d in (35,30,3,0)]  # polynomial t^40 + t^35 + t^30 + t^3 + 1
+        self.l5 = LFSR(extra_40_bits, taps5())
+    def keystream_bit(self):
+        # same as E0Core but include x5 and also clock l5
+        x1 = self.l1.peek_output(self.l1.n - 1)
+        x2 = self.l2.peek_output(self.l2.n - 1)
+        x3 = self.l3.peek_output(self.l3.n - 1)
+        x4 = self.l4.peek_output(self.l4.n - 1)
+        x5 = self.l5.peek_output(self.l5.n - 1)
+        c0 = (self.s0 ^ self.s1_fsm) & 1
+        z = x1 ^ x2 ^ x3 ^ x4 ^ x5 ^ c0
+        # clock all
+        out1 = self.l1.clock()
+        out2 = self.l2.clock()
+        out3 = self.l3.clock()
+        out4 = self.l4.clock()
+        out5 = self.l5.clock()
+        # FSM update (slightly altered to include out5)
+        new_s1 = (self.s0 ^ out1 ^ out5) & 1
+        new_s0 = (self.s1_fsm ^ out2) & 1
+        self.s0, self.s1_fsm = new_s0, new_s1
+        return z
+
+# ---------- Helper to turn hex key to bits ----------
+def hex_to_bits(hexstr, want_len):
+    v = int(hexstr, 16)
+    bits = int_to_bits(v, want_len)
+    return bits
+
+# ---------- Image XOR helpers ----------
+def xor_bytes_with_keystream(data_bytes, keystream_bytes):
+    return bytes([b ^ k for b,k in zip(data_bytes, keystream_bytes)])
+
+def encrypt_image(file_in, file_out, keystream_generator, block_mode='full'):
+    im = Image.open(file_in).convert('L')  # grayscale
+    arr = np.array(im).flatten()
+    n = arr.size
+    # get keystream of n bytes
+    ks = keystream_generator(n)
+    enc = np.frombuffer(xor_bytes_with_keystream(arr.tobytes(), ks), dtype=np.uint8)
+    im_enc = Image.fromarray(enc.reshape(im.size[1], im.size[0]))
+    im_enc.save(file_out)
+
+# ---------- Main demo ----------
+def demo():
+    # prepare a 128-bit key as hex (example)
+    key_hex = "00112233445566778899aabbccddeeff"  # 128-bit
+    key_bits = hex_to_bits(key_hex, 128)
+    extra40_hex = "0f0e0d0c0b0a09080706"  # at least 40 bits (example)
+    extra40_int = int(extra40_hex, 16)
+    extra_bits = int_to_bits(extra40_int, 40)
+    e0 = E0Core(key_bits)
+    e0m = E0Modified(key_bits, extra_bits)
+
+    # print first 64 keystream bits for both
+    ks1 = ''.join(str((e0.keystream_bit())) for _ in range(64))
+    ks2 = ''.join(str((e0m.keystream_bit())) for _ in range(64))
+    print("Original E0 first 64 bits:", ks1)
+    print("Modified E0 first 64 bits:", ks2)
+
+    # Example: encrypt a sample image 'lena_gray.bmp' (must be in working dir)
+    try:
+        # define generator functions returning bytes of length n
+        def gen1(n):
+            return e0.keystream_bytes(n)
+        def gen2(n):
+            return e0m.keystream_bytes(n)
+
+        encrypt_image('lena_gray.bmp', 'lena_e0.bmp', gen1)
+        encrypt_image('lena_gray.bmp', 'lena_e0m.bmp', gen2)
+        # decrypt back to check correctness
+        encrypt_image('lena_e0.bmp', 'lena_e0_decoded.bmp', gen1)   # XOR again with same keystream generator won't restore unless starting state reset -- in practice reinitialize.
+        print("Encrypted images: lena_e0.bmp, lena_e0m.bmp")
+    except FileNotFoundError:
+        print("Put a grayscale image called 'lena_gray.bmp' in the directory to produce encrypted outputs.")
+
+if __name__ == '__main__':
+    demo()
+
