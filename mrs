@@ -1,0 +1,79 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+// Function to perform modular exponentiation
+long long mod_exp(long long base, long long exp, long long mod) {
+    long long result = 1;
+    base = base % mod;
+    while (exp > 0) {
+        if (exp % 2 == 1)
+            result = (result * base) % mod;
+        exp = exp >> 1;
+        base = (base * base) % mod;
+    }
+    return result;
+}
+
+// Miller test
+int miller_test(long long d, long long n) {
+    long long a = 2 + rand() % (n - 4);
+    long long x = mod_exp(a, d, n);
+
+    if (x == 1 || x == n - 1)
+        return 1;
+
+    while (d != n - 1) {
+        x = (x * x) % n;
+        d *= 2;
+
+        if (x == 1) return 0;
+        if (x == n - 1) return 1;
+    }
+    return 0;
+}
+
+// Miller–Rabin primality test
+int is_prime(long long n, int k) {
+    if (n <= 1 || n == 4) return 0;
+    if (n <= 3) return 1;
+
+    long long d = n - 1;
+    while (d % 2 == 0)
+        d /= 2;
+
+    for (int i = 0; i < k; i++)
+        if (!miller_test(d, n))
+            return 0;
+
+    return 1;
+}
+
+int main() {
+    srand(time(NULL));  // Seed the random number generator
+
+    long long test_numbers[] = {101, 103, 997, 221, 341, 561};
+    int size = sizeof(test_numbers) / sizeof(test_numbers[0]);
+
+    // Test fixed numbers
+    for (int i = 0; i < size; i++) {
+        if (is_prime(test_numbers[i], 5))
+            printf("%lld is probably prime\n", test_numbers[i]);
+        else
+            printf("%lld is composite\n", test_numbers[i]);
+    }
+
+    // Generate and test a random number
+    long long random_num = rand() % 100000 + 2;  // Random number between 2 and 100001
+    printf("\nGenerated random number: %lld\n", random_num);
+
+    if (is_prime(random_num, 5))
+        printf("%lld is probably prime\n", random_num);
+    else
+        printf("%lld is composite\n", random_num);
+
+    return 0;
+}
+
+gcc miller_small.c -o miller_small
+./miller_small
