@@ -1,0 +1,77 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+class RC4 {
+private:
+    vector<int> S;      // 256-byte state array
+    vector<int> key;    // key bytes
+    int i, j;           // PRGA indices
+
+public:
+    RC4(const string &keyStr) {
+        S.resize(256);
+        key.resize(keyStr.size());
+        for (int k = 0; k < keyStr.size(); k++)
+            key[k] = (unsigned char)keyStr[k];
+
+        KSA();
+        i = j = 0;
+    }
+
+    // Key Scheduling Algorithm
+    void KSA() {
+        for (int k = 0; k < 256; k++)
+            S[k] = k;
+
+        int j = 0;
+        for (int k = 0; k < 256; k++) {
+            j = (j + S[k] + key[k % key.size()]) % 256;
+            swap(S[k], S[j]);
+        }
+    }
+
+    // Pseudo-Random Generation Algorithm (one byte)
+    unsigned char PRGA() {
+        i = (i + 1) % 256;
+        j = (j + S[i]) % 256;
+        swap(S[i], S[j]);
+        int t = (S[i] + S[j]) % 256;
+        return (unsigned char) S[t];
+    }
+
+    // Encrypt/Decrypt (same function)
+    string encryptDecrypt(const string &data) {
+        string out = "";
+        for (char c : data) {
+            unsigned char k = PRGA();  
+            out += (unsigned char)(c ^ k);
+        }
+        return out;
+    }
+};
+
+int main() {
+    string key, plaintext;
+
+    cout << "Enter key: ";
+    getline(cin, key);
+
+    cout << "Enter plaintext: ";
+    getline(cin, plaintext);
+
+    RC4 rc4(key);
+
+    // Encryption
+    string cipher = rc4.encryptDecrypt(plaintext);
+    cout << "\nCiphertext (hex): ";
+    for (unsigned char c : cipher)
+        cout << hex << setw(2) << setfill('0') << (int)c << " ";
+    cout << endl;
+
+    // Decryption
+    RC4 rc4_dec(key);
+    string decrypted = rc4_dec.encryptDecrypt(cipher);
+    cout << "Decrypted text: " << decrypted << endl;
+
+    return 0;
+}
